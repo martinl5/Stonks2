@@ -32,30 +32,6 @@ This project is an **Automated Stock Recommendation Bot** designed to assist inv
 4. **Telegram Notifications**:
    - Sends formatted financial summaries and recommendations to users via a Telegram bot.
 
----
-
-## 📦 Installation
-
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/martinl5/Stonks2.git
-   cd Stonks2
-   ```
-
-2. **Install Dependencies**:
-   Ensure you have Python 3.8+ installed. Then, run:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Set Up Your Telegram Bot**:
-   - Create a Telegram bot and obtain its API token.
-   - Replace `YOUR_BOT_TOKEN` and `YOUR_CHAT_ID` in the `bot.py` script with your Telegram bot token and chat ID.
-
-4. **Run the Bot**:
-   ```bash
-   python bot.py
-   ```
 
 ---
 
