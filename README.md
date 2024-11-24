@@ -38,8 +38,8 @@ This project is an **Automated Stock Recommendation Bot** designed to assist inv
 
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/yourusername/stock-recommendation-bot.git
-   cd stock-recommendation-bot
+   git clone https://github.com/martinl5/Stonks2.git
+   cd Stonks2
    ```
 
 2. **Install Dependencies**:
