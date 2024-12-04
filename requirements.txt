@@ -3,4 +3,6 @@ beautifulsoup4==4.12.2
 requests==2.31.0
 pandas==2.1.1
 numpy==1.26.0
-
+streamlit==1.26.0
+plotly==5.17.0
+ta==0.10.2
