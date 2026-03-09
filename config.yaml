@@ -1,0 +1,81 @@
+# Stonks2 Configuration File
+# This file contains non-sensitive configuration parameters for the stock analysis application.
+
+# Notification settings
+notifications:
+  enabled: true
+  channels:
+    telegram:
+      enabled: true
+      # Credentials should be loaded from environment variables (.env file)
+      # TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID
+
+# Stocks to monitor
+monitored_stocks:
+  # List of stock ticker symbols to analyze
+  symbols:
+    - AAPL
+    - MSFT
+    - AMZN
+    - GOOGL
+    - META
+    - HSY
+    - KO
+    - PEP
+    - NKE
+    - V
+    - INTC
+    - NVDA
+    - AMD
+    - IBM
+    - ORCL
+    - ASML
+    - NFLX
+
+  # How often to refresh stock data (in minutes)
+  update_interval_minutes: 15
+
+# Recommendation thresholds
+recommendation:
+  # Buy if stock PE < industry_avg * buy_multiplier
+  buy_pe_multiplier: 0.85  # Buy if PE is less than 85% of industry average
+  buy_pb_multiplier: 0.85  # Buy if PB is less than 85% of industry average
+
+  # Sell if stock PE > industry_avg * sell_multiplier
+  sell_pe_multiplier: 1.15  # Sell if PE is greater than 115% of industry average
+  sell_pb_multiplier: 1.15  # Sell if PB is greater than 115% of industry average
+
+  # If niether buy nor sell conditions met, recommend Hold
+
+# Data sources
+data_sources:
+  stock_data:
+    provider: "yahoo_finance"
+    timeout_seconds: 10
+    retry_attempts: 3
+
+  industry_benchmarks:
+    pe_pb_source: "nyu_stern"
+    pe_pb_urls:
+      pe: "http://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/pedata.html"
+      pb: "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/pbvdata.html"
+    cache_duration_days: 7  # Cache industry benchmarks for 7 days
+
+# Logging configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/stonks2.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# Error handling
+error_handling:
+  max_consecutive_failures: 3
+  alert_on_failure: true
+  continue_on_stock_error: true  # Continue processing other stocks if one fails
+
+# Performance settings
+performance:
+  parallel_fetch: false  # Set to true to fetch multiple stocks concurrently
+  max_workers: 5  # Number of parallel workers if parallel_fetch is true
