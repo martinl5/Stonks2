@@ -13,8 +13,8 @@ notifications:
 # Stocks to monitor
 monitored_stocks:
   # List of stock ticker symbols to analyze.
-  # NOTE: app.py and pe-pb-ratiotrigger.ipynb currently hardcode this list
-  # (without NFLX) - keep them in sync when editing.
+  # daily_job.py reads this list directly. NOTE: app.py still hardcodes the
+  # same list - keep the two in sync when editing.
   symbols:
     - AAPL
     - MSFT
@@ -32,7 +32,6 @@ monitored_stocks:
     - IBM
     - ORCL
     - ASML
-    - NFLX
 
   # How often to refresh stock data (in minutes)
   update_interval_minutes: 15

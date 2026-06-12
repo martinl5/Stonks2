@@ -9,8 +9,8 @@ plotly==5.17.0
 ta==0.10.2
 pyyaml>=6.0
 
-# Kaggle daily job (pe-pb-ratiotrigger.ipynb) - the notebook self-installs
-# yahooquery and xlrd on Kaggle; these are for local development/testing.
+# Daily alert job (daily_job.py) - GitHub Actions installs the slim
+# requirements-job.txt; these are for local development/testing.
 yahooquery>=2.3
 xlrd>=2.0
 matplotlib>=3.7

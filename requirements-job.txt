@@ -1,0 +1,12 @@
+# Dependencies for the daily alert job (daily_job.py) run by
+# .github/workflows/daily-job.yml. Kept slim so the daily install is fast;
+# the Streamlit dashboard's dependencies live in requirements.txt.
+pandas>=2.1
+numpy>=1.26
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=4.9
+yahooquery>=2.3
+xlrd>=2.0
+matplotlib>=3.7
+pyyaml>=6.0
