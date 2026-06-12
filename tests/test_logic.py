@@ -277,3 +277,29 @@ def test_mcclellan_returns_none_on_fetch_error(nb):
         assert nb['fetch_mcclellan_oscillator'](days=14) is None
     finally:
         nb['requests'] = original
+
+
+def test_mcclellan_passes_file_like_to_read_excel(nb, monkeypatch):
+    """pandas 3.0 rejects raw bytes in read_excel - the XLS download must be
+    wrapped in a file-like object (regression test for the 2026-06-12 run)."""
+    class FakeResponse:
+        content = b'xls-bytes'
+
+        def raise_for_status(self):
+            pass
+
+    class FakeRequests:
+        @staticmethod
+        def get(*args, **kwargs):
+            return FakeResponse()
+
+    seen = {}
+
+    def fake_read_excel(obj, **kwargs):
+        seen['file_like'] = hasattr(obj, 'read')
+        raise ValueError('stop after capturing the argument')
+
+    monkeypatch.setitem(nb, 'requests', FakeRequests)
+    monkeypatch.setattr(pd, 'read_excel', fake_read_excel)
+    assert nb['fetch_mcclellan_oscillator'](days=14) is None
+    assert seen['file_like'] is True

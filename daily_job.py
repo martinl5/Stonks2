@@ -21,6 +21,7 @@ import time
 import traceback
 import warnings
 from datetime import datetime, timedelta
+from io import BytesIO
 
 warnings.filterwarnings("ignore")
 
@@ -428,8 +429,9 @@ def fetch_mcclellan_oscillator(days=60):
     try:
         response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
-        # Load the XLS - the data usually starts around row 6
-        df_mcc = pd.read_excel(response.content, engine='xlrd', skiprows=6)
+        # Load the XLS - the data usually starts around row 6.
+        # BytesIO wrapper required: pandas 3.0 dropped raw-bytes input.
+        df_mcc = pd.read_excel(BytesIO(response.content), engine='xlrd', skiprows=6)
 
         # Column 0 is Date, Column 9 is McClellan Oscillator
         df_mcc = df_mcc.iloc[:, [0, 9]]
