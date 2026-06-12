@@ -57,8 +57,9 @@ The Streamlit app provides an interactive dashboard where users can:
   - Estimated with the Benjamin Graham formula `EPS × (8.5 + 2g)`, where `g`
     is the expected earnings growth in percent (clamped to 0–25%).
 
-### 4. **Kaggle Daily Job** (`pe-pb-ratiotrigger.ipynb`)
-A self-contained notebook scheduled to run daily on Kaggle. Each run sends to Telegram:
+### 4. **Daily Job on GitHub Actions** (`daily_job.py`)
+A script run every morning at 08:00 SGT (00:00 UTC) by the
+`.github/workflows/daily-job.yml` workflow. Each run sends to Telegram:
 - Per-stock Buy/Hold/Sell recommendations (batched into a few messages).
 - A McClellan Oscillator trend chart with Zweig-style breadth-thrust detection
   (oversold below −70 within the last 10 sessions, now above +70).
@@ -66,8 +67,20 @@ A self-contained notebook scheduled to run daily on Kaggle. Each run sends to Te
 - A crash-protection status from 3-day-smoothed VIX and the VIX3M/VIX term
   structure (STRESS when VIX > 25 and VIX3M/VIX < 0.9; CRASH when VIX > 40).
 
-If a data source is unavailable, the notebook sends an explicit
-"data unavailable" notice instead of guessing.
+If a data source is unavailable, the job sends an explicit
+"data unavailable" notice instead of guessing. Stock symbols and
+recommendation multipliers are read from `config.yaml`.
+
+**Operational notes:**
+- The schedule is defined as a UTC cron (`0 0 * * *`); GitHub may delay
+  scheduled runs by up to ~15 minutes during peak load.
+- You can trigger a run manually: **Actions tab → Daily stock alerts →
+  Run workflow**.
+- On public repos, GitHub automatically pauses scheduled workflows after
+  ~60 days without repository activity — re-enable with one click in the
+  Actions tab (any new commit also keeps it alive).
+- A run goes red (and GitHub emails you) if any section fails; the other
+  sections still run and send their alerts.
 
 ---
 
@@ -76,9 +89,11 @@ If a data source is unavailable, the notebook sends an explicit
   - Install dependencies: `pip install -r requirements.txt`
   - Run the app: `streamlit run app.py`
 - **Telegram Bot**:
-  - On Kaggle: store the credentials as Kaggle user secrets named
-    `TELEGRAM_TOKEN` and `chat_id` (Add-ons → Secrets in the notebook editor).
-  - Locally: see `.env.example` — never commit tokens or chat IDs to the repo.
+  - On GitHub Actions: add repository secrets named `TELEGRAM_BOT_TOKEN` and
+    `TELEGRAM_CHAT_ID` (repo **Settings → Secrets and variables → Actions →
+    New repository secret**). The daily job reads them as environment variables.
+  - Locally: export the same two variables (see `.env.example`) and run
+    `python daily_job.py` — never commit tokens or chat IDs to the repo.
 - **Yahoo Finance API**:
   - Ensure internet access for fetching real-time data.
 - **Web Scraping**:

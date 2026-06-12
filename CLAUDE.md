@@ -5,19 +5,22 @@ This file provides guidance for Claude Code when working with the Stonks2 projec
 ## Project Overview
 
 ### Description
-Stonks2 is a stock market analysis and visualization application built with Streamlit. It provides interactive dashboards for tracking stock prices, analyzing financial data, and displaying real-time market information. The application includes a main dashboard interface (app.py) and a daily alerting job (pe-pb-ratiotrigger.ipynb) that runs on Kaggle and sends Telegram notifications.
+Stonks2 is a stock market analysis and visualization application built with Streamlit. It provides interactive dashboards for tracking stock prices, analyzing financial data, and displaying real-time market information. The application includes a main dashboard interface (app.py) and a daily alerting job (daily_job.py) that runs on GitHub Actions (.github/workflows/daily-job.yml, 08:00 SGT daily) and sends Telegram notifications.
 
 ### Tech Stack
-- Python (app.py, pe-pb-ratiotrigger.ipynb)
+- Python (app.py, daily_job.py)
 - Streamlit (dashboard)
-- Jupyter Notebook (Kaggle daily job)
+- GitHub Actions (daily job scheduling)
 - Git (version control)
 
-### Important Constraint
-`pe-pb-ratiotrigger.ipynb` must stay **self-contained**: Kaggle runs only the
-uploaded .ipynb, so it cannot import from other repo files or read
-config.yaml. Constants duplicated from config.yaml (e.g. the 0.85/1.15
-recommendation multipliers) must be kept in sync manually.
+### Important Notes
+- `daily_job.py` reads its stock symbols and recommendation multipliers from
+  `config.yaml` (with hardcoded fallbacks). `app.py` still hardcodes the same
+  symbol list — keep the two in sync.
+- The daily job's Telegram credentials come from the `TELEGRAM_BOT_TOKEN` and
+  `TELEGRAM_CHAT_ID` environment variables (GitHub Actions repository secrets).
+- Its dependencies live in `requirements-job.txt` (slim, installed by the
+  workflow); keep it updated when daily_job.py gains imports.
 
 ## Development Workflow
 
@@ -32,12 +35,11 @@ streamlit run app.py
 
 ### Testing
 ```bash
-# Unit tests for the notebook's pure logic (loads functions from the .ipynb with stubs)
+# Unit tests for the daily job's pure logic
 python -m pytest tests/ -q
 
 # Syntax checks
-python -m py_compile app.py
-python -c "import json; json.load(open('pe-pb-ratiotrigger.ipynb'))"
+python -m py_compile app.py daily_job.py
 ```
 
 ## Important Conventions

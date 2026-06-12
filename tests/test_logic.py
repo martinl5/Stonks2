@@ -1,53 +1,27 @@
-"""Unit tests for the pure logic in pe-pb-ratiotrigger.ipynb.
+"""Unit tests for the pure logic in daily_job.py.
 
-The notebook must stay self-contained for Kaggle, so instead of importing a
-module we load the .ipynb JSON, keep only the function definitions and
-constants from each code cell (via ast filtering), and exec them into a
-namespace with the network/Kaggle dependencies stubbed out.
+The module is imported directly (it does no network I/O at import time).
+The `nb` fixture exposes the module's namespace as a dict — assigning to a
+key (e.g. nb['Ticker'] = FakeTicker) patches the module global, which is how
+the network-dependent tests stub out yahooquery and Telegram.
 """
-import ast
-import json
 import math
 import os
-import re
-import time
+import sys
 
 import numpy as np
 import pandas as pd
 import pytest
 import requests
-from bs4 import BeautifulSoup
 
-NOTEBOOK = os.path.join(os.path.dirname(__file__), '..', 'pe-pb-ratiotrigger.ipynb')
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-
-def _load_notebook_functions():
-    ns = {
-        'pd': pd, 'np': np, 'math': math, 're': re, 'time': time,
-        'requests': requests, 'BeautifulSoup': BeautifulSoup,
-        'bot_token': 'test-token', 'CHAT_ID': '123', 'Ticker': None,
-    }
-    nb = json.load(open(NOTEBOOK))
-    for cell in nb['cells']:
-        if cell['cell_type'] != 'code':
-            continue
-        src = ''.join(cell['source'])
-        src = '\n'.join(l for l in src.splitlines() if not l.lstrip().startswith('!'))
-        tree = ast.parse(src)
-        kept = [
-            node for node in tree.body
-            if isinstance(node, ast.FunctionDef)
-            or (isinstance(node, ast.Assign)
-                and isinstance(node.value, ast.Constant)
-                and all(isinstance(t, ast.Name) for t in node.targets))
-        ]
-        exec(compile(ast.Module(body=kept, type_ignores=[]), '<cell>', 'exec'), ns)
-    return ns
+import daily_job
 
 
 @pytest.fixture(scope='module')
 def nb():
-    return _load_notebook_functions()
+    return vars(daily_job)
 
 
 # ---- numeric helpers -------------------------------------------------
