@@ -5,13 +5,19 @@ This file provides guidance for Claude Code when working with the Stonks2 projec
 ## Project Overview
 
 ### Description
-Stonks2 is a stock market analysis and visualization application built with Streamlit. It provides interactive dashboards for tracking stock prices, analyzing financial data, and displaying real-time market information. The application includes a main dashboard interface and supports data analysis through Jupyter notebooks.
+Stonks2 is a stock market analysis and visualization application built with Streamlit. It provides interactive dashboards for tracking stock prices, analyzing financial data, and displaying real-time market information. The application includes a main dashboard interface (app.py) and a daily alerting job (pe-pb-ratiotrigger.ipynb) that runs on Kaggle and sends Telegram notifications.
 
 ### Tech Stack
-- Python (app.py, finance.ipynb)
+- Python (app.py, pe-pb-ratiotrigger.ipynb)
 - Streamlit (dashboard)
-- Jupyter Notebook (analysis)
+- Jupyter Notebook (Kaggle daily job)
 - Git (version control)
+
+### Important Constraint
+`pe-pb-ratiotrigger.ipynb` must stay **self-contained**: Kaggle runs only the
+uploaded .ipynb, so it cannot import from other repo files or read
+config.yaml. Constants duplicated from config.yaml (e.g. the 0.85/1.15
+recommendation multipliers) must be kept in sync manually.
 
 ## Development Workflow
 
@@ -25,7 +31,14 @@ streamlit run app.py
 ```
 
 ### Testing
-(Pending: Add testing instructions)
+```bash
+# Unit tests for the notebook's pure logic (loads functions from the .ipynb with stubs)
+python -m pytest tests/ -q
+
+# Syntax checks
+python -m py_compile app.py
+python -c "import json; json.load(open('pe-pb-ratiotrigger.ipynb'))"
+```
 
 ## Important Conventions
 

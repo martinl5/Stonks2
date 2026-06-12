@@ -2,3 +2,5 @@
 .env.local
 .env.production
 .env.development
+__pycache__/
+.pytest_cache/

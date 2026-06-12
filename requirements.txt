@@ -1,3 +1,4 @@
+# Streamlit dashboard (app.py)
 yfinance==0.2.30
 beautifulsoup4==4.12.2
 requests==2.31.0
@@ -6,3 +7,14 @@ numpy==1.26.0
 streamlit==1.26.0
 plotly==5.17.0
 ta==0.10.2
+pyyaml>=6.0
+
+# Kaggle daily job (pe-pb-ratiotrigger.ipynb) - the notebook self-installs
+# yahooquery and xlrd on Kaggle; these are for local development/testing.
+yahooquery>=2.3
+xlrd>=2.0
+matplotlib>=3.7
+lxml>=4.9
+
+# Tests (tests/test_logic.py)
+pytest>=7.0
