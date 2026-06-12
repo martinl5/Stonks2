@@ -12,7 +12,9 @@ notifications:
 
 # Stocks to monitor
 monitored_stocks:
-  # List of stock ticker symbols to analyze
+  # List of stock ticker symbols to analyze.
+  # NOTE: app.py and pe-pb-ratiotrigger.ipynb currently hardcode this list
+  # (without NFLX) - keep them in sync when editing.
   symbols:
     - AAPL
     - MSFT

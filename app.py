@@ -1,14 +1,82 @@
-import streamlit as st
+import math
+import re
+from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import pandas as pd
-import numpy as np
-import yfinance as yf
-from datetime import datetime, timedelta
-import ta
-import re
-from bs4 import BeautifulSoup
 import requests
+import streamlit as st
+import ta
+import yaml
+import yfinance as yf
+from bs4 import BeautifulSoup
+
+
+# PART 0: Configuration and shared helpers
+DEFAULT_RECOMMENDATION = {
+    'buy_pe_multiplier': 0.85,
+    'buy_pb_multiplier': 0.85,
+    'sell_pe_multiplier': 1.15,
+    'sell_pb_multiplier': 1.15,
+}
+
+
+def load_recommendation_config():
+    try:
+        with open('config.yaml') as f:
+            cfg = yaml.safe_load(f) or {}
+        rec = cfg.get('recommendation') or {}
+    except (OSError, yaml.YAMLError):
+        rec = {}
+    return {**DEFAULT_RECOMMENDATION, **{k: v for k, v in rec.items() if k in DEFAULT_RECOMMENDATION}}
+
+
+REC_CFG = load_recommendation_config()
+
+
+def is_num(value):
+    """True for real numbers that are not NaN."""
+    try:
+        return value is not None and not math.isnan(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def first_valid(*values, default=np.nan):
+    """Return the first value that is not None/NaN."""
+    for v in values:
+        if is_num(v):
+            return v
+    return default
+
+
+def normalize_dividend_yield(raw):
+    """Return dividend yield in percent.
+
+    Yahoo has flip-flopped between returning a fraction (0.0044) and a
+    percent (0.44) for dividendYield, so detect the unit instead of
+    blindly multiplying by 100.
+    """
+    if not is_num(raw):
+        return np.nan
+    if raw > 1:  # no fraction-style yield exceeds 100%, so this is already a percent
+        return raw
+    pct = raw * 100
+    return raw if pct > 25 else pct  # >25% yield is implausible: raw was already a percent
+
+
+def estimate_intrinsic_value(eps, growth_rate):
+    """Graham intrinsic value: EPS x (8.5 + 2g), with g = expected growth in percent.
+
+    Growth is clamped to [0, 25]% so one-off earnings swings don't distort
+    the estimate. Returns NaN for missing data or non-positive EPS.
+    """
+    if not is_num(eps) or eps <= 0 or not is_num(growth_rate):
+        return np.nan
+    g_pct = min(max(growth_rate * 100, 0), 25)
+    return eps * (8.5 + 2 * g_pct)
 
 
 # PART 1: Functions for pulling, processing, and creating technical indicators
@@ -21,13 +89,18 @@ def fetch_stock_data(ticker, period, interval):
         data = yf.download(ticker, period=period, interval=interval)
     return data
 
+
 def process_data(data):
-    if data.index.tzinfo is None:
+    # Newer yfinance versions return MultiIndex columns (field, ticker)
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+    if data.index.tz is None:
         data.index = data.index.tz_localize('UTC')
     data.index = data.index.tz_convert('US/Eastern')
     data.reset_index(inplace=True)
     data.rename(columns={'Date': 'Datetime'}, inplace=True)
     return data
+
 
 def calculate_metrics(data):
     last_close = data['Close'].iloc[-1]
@@ -39,152 +112,188 @@ def calculate_metrics(data):
     volume = data['Volume'].sum()
     return last_close, change, pct_change, high, low, volume
 
+
 def add_technical_indicators(data):
     data['SMA_20'] = ta.trend.sma_indicator(data['Close'], window=20)
     data['EMA_20'] = ta.trend.ema_indicator(data['Close'], window=20)
     return data
 
 
-
 def get_stock_data(stock):
     stock_data = yf.Ticker(stock)
     stock_info = stock_data.info
-    
-    # Retrieve stock data with fallback to NaN
-    stock_price = stock_info.get('regularMarketPreviousClose', np.nan)  # Default to NaN if missing
-    
+
+    # Prefer the live quote; fall back to the previous close
+    stock_price = first_valid(
+        stock_info.get('regularMarketPrice'),
+        stock_info.get('currentPrice'),
+        stock_info.get('regularMarketPreviousClose'),
+    )
+
     # Check for 'trailingPE', then 'forwardPE', and fallback to NaN
-    pe_ratio = stock_info.get('trailingPE') if stock_info.get('trailingPE') is not None else stock_info.get('forwardPE', np.nan)
-    
-    pb_ratio = stock_info.get('priceToBook', np.nan)  # Default to NaN if missing
-    
-    # Handle dividend yield (convert to percentage if available)
-    dividend_yield = stock_info.get('dividendYield', 0)  # Default to 0 if missing
-    if dividend_yield is not None:
-        dividend_yield *= 100
-    
+    pe_ratio = first_valid(stock_info.get('trailingPE'), stock_info.get('forwardPE'))
+
+    pb_ratio = first_valid(stock_info.get('priceToBook'))
+
+    dividend_yield = normalize_dividend_yield(stock_info.get('dividendYield'))
+
     # Default industry to 'Unknown' if missing
     industry = stock_info.get('industry', 'Unknown')
-    
-    #Get the mean recommendation of the stock
-    mean_recommendation = stock_info.get('targetMeanPrice', np.nan)
-    #Get the median recommendation of the stock
-    median_recommendation = stock_info.get('targetMedianPrice', np.nan)
-    # calculate financial intrinsic value of the stock using the financials Intrinsic value = Earnings per share (EPS) x (1 + r) x P/E ratio
-    # where r is the expected growth rate of the company
-    # calculate the growth rate of the company
-    growth_rate = stock_info.get('earningsGrowth', np.nan)
-    # calculate the earnings per share
-    eps = stock_info.get('trailingEps', np.nan)
-    # calculate the financial intrinsic value, if growth rate and eps is not available, set intrinsic value to NaN
-    if growth_rate is not None and eps is not None:
-        financial_intrinsic_value = eps * (1 + growth_rate) * pe_ratio
-    else:
-        financial_intrinsic_value = np.nan
-    
-    
+
+    # Mean and median analyst target prices
+    mean_recommendation = first_valid(stock_info.get('targetMeanPrice'))
+    median_recommendation = first_valid(stock_info.get('targetMedianPrice'))
+
+    # Graham intrinsic value from EPS and expected earnings growth
+    growth_rate = stock_info.get('earningsGrowth')
+    eps = stock_info.get('trailingEps')
+    financial_intrinsic_value = estimate_intrinsic_value(eps, growth_rate)
+
     return stock_price, pe_ratio, pb_ratio, dividend_yield, mean_recommendation, median_recommendation, financial_intrinsic_value, industry
 
 
+# PART 2: Industry-average PE and PB benchmarks (Damodaran / NYU Stern)
+PE_URL = 'https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/pedata.html'
+PB_URL = 'https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/pbvdata.html'
 
-url = 'http://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/pedata.html'
 
-def get_pe_averages():
-    # Disable SSL verification
-    response = requests.get(url, verify=False)
-    soup = BeautifulSoup(response.content, 'html.parser')
-    table = soup.find_all('table')[0]  # Find the first table
-    rows = table.find_all('tr')
-    pe_averages = {}
-    for row in rows[1:]:  # Skip the header row
+def http_get(url, timeout=20, retries=3, backoff=2):
+    """GET with retries; only falls back to verify=False on SSL errors."""
+    import time as _time
+    last_error = None
+    verify = True
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, timeout=timeout, verify=verify)
+            response.raise_for_status()
+            return response
+        except requests.exceptions.SSLError as e:
+            last_error = e
+            verify = False  # Damodaran's cert chain is occasionally broken
+        except requests.RequestException as e:
+            last_error = e
+        _time.sleep(backoff ** attempt)
+    raise last_error
+
+
+def safe_float(text, default=np.nan):
+    """'22.41' -> 22.41; 'NA', '', '-' -> default. Never raises."""
+    if text is None:
+        return default
+    if isinstance(text, (int, float)):
+        return float(text)
+    try:
+        return float(str(text).replace(',', '').replace('%', '').strip())
+    except ValueError:
+        return default
+
+
+def parse_industry_table(html, header_keywords, fallback_col, min_rows=50):
+    """Map industry name -> value from the first table on a Damodaran page.
+
+    The value column is located by header name so a layout change can't
+    silently shift us onto the wrong metric; `fallback_col` preserves the
+    historical fixed index when no header matches. Values are coerced to
+    float at parse time ('NA' and friends become NaN).
+    """
+    soup = BeautifulSoup(html, 'html.parser')
+    rows = soup.find_all('table')[0].find_all('tr')
+
+    header_cells = [c.get_text(' ', strip=True).lower() for c in rows[0].find_all(['td', 'th'])]
+    value_col = fallback_col
+    for i, header in enumerate(header_cells):
+        if any(keyword in header for keyword in header_keywords):
+            value_col = i
+            break
+
+    averages = {}
+    for row in rows[1:]:
         items = row.find_all('td')
-        industry = items[0].text.strip()
-        pe = items[3].text.strip()
-        pe_averages[industry] = pe
-    return pe_averages
+        if len(items) <= value_col:
+            continue
+        industry = re.sub(r'\s+', ' ', items[0].get_text(' ', strip=True)).strip()
+        if industry:
+            averages[industry] = safe_float(items[value_col].get_text(strip=True))
+
+    if len(averages) < min_rows:
+        raise ValueError(f"only parsed {len(averages)} industries - page layout may have changed")
+    return averages
+
+
+@st.cache_data(ttl=7 * 24 * 3600)  # config.yaml: cache industry benchmarks for 7 days
+def get_industry_averages(url, header_keywords, fallback_col):
+    try:
+        return parse_industry_table(http_get(url).content, header_keywords, fallback_col)
+    except Exception as e:
+        st.warning(f"Industry benchmark fetch failed for {url}: {e}")
+        return {}
+
 
 def get_pe_average(industry, pe_averages):
     return pe_averages.get(industry, np.nan)
 
-# Get the PE averages
-pe_averages = get_pe_averages()
-
-#get the pb ratios of the industries
-url = 'https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/pbvdata.html'
-def get_pb_averages():
-    # Disable SSL verification
-    response = requests.get(url, verify=False)
-    soup = BeautifulSoup(response.content, 'html.parser')
-    table = soup.find_all('table')[0]  # Find the first table
-    rows = table.find_all('tr')
-    pb_averages = {}
-    for row in rows[1:]:  # Skip the header row
-        items = row.find_all('td')
-        industry = items[0].text.strip()
-        pb = items[2].text.strip()
-        pb_averages[industry] = pb
-    return pb_averages
 
 def get_pb_average(industry, pb_averages):
     return pb_averages.get(industry, np.nan)
 
-#try to get the pb ratio of the industry
-pb_averages = get_pb_averages()
 
-# Clean the keys in pe_averages using regex
-pe_averages = {re.sub(r'\s+', ' ', re.sub(r'\n\t\t', '', industry)).strip(): pe for industry, pe in pe_averages.items()}
-
-pb_averages = {re.sub(r'\s+', ' ', re.sub(r'\n\t\t', '', industry)).strip(): pb for industry, pb in pb_averages.items()}
-
+# PART 3: Overview table with recommendations
 # List of stocks to analyze
 stocks = ['AAPL', 'MSFT', 'AMZN', 'GOOGL', 'META', 'HSY', 'KO', 'PEP', 'NKE', 'V', 'INTC', 'NVDA', 'AMD', 'IBM', 'ORCL', 'ASML']
 
-# Get information for each stock
-results = []
-for stock in stocks:
-    stock_price, pe_ratio, pb_ratio, dividend_yield, mean_rec, median_rec, financial_iv, industry = get_stock_data(stock)
-    if industry == 'Semiconductors' or industry == 'Semiconductor Equipment & Materials':
-        industry = 'Semiconductor'
-    #map Software-Infrastructure to Software (System & Application)
-    if industry == 'Software - Infrastructure' or industry == 'Information Technology Services':
-        industry = 'Software (System & Application)'
-    #map Consumer Electronics to Software (Entertainment)
-    if industry == 'Consumer Electronics':
-        industry = 'Software (Entertainment)'
-    #map Internet Content & Information to Software (Internet)
-    if industry == 'Internet Content & Information' or industry == 'Internet Retail':
-        industry = 'Software (Internet)'
-    #map Confectioners to Food Processing
-    if industry == 'Confectioners':
-        industry = 'Food Processing'
-    #map Beverages - Non-Alcoholic to Beverages (Soft)
-    if industry == 'Beverages - Non-Alcoholic':
-        industry = 'Beverage (Soft)'
-    #map Credit Services to Financial Svcs. (Non-bank & Insurance)	
-    if industry == 'Credit Services':
-        industry = 'Financial Svcs. (Non-bank & Insurance)'
-    #map Footwear & Accessories to Apparel
-    if industry == 'Footwear & Accessories':
-        industry = 'Apparel'
-    pe_average = get_pe_average(industry, pe_averages)
-    pb_average = get_pb_average(industry, pb_averages)
-    results.append([stock, industry, stock_price, pe_ratio, pb_ratio, dividend_yield, pe_average, pb_average, mean_rec, median_rec, financial_iv])
+# Map Yahoo industry names onto Damodaran's industry naming
+INDUSTRY_MAP = {
+    'Semiconductors': 'Semiconductor',
+    'Semiconductor Equipment & Materials': 'Semiconductor',
+    'Software - Infrastructure': 'Software (System & Application)',
+    'Information Technology Services': 'Software (System & Application)',
+    'Consumer Electronics': 'Software (Entertainment)',
+    'Internet Content & Information': 'Software (Internet)',
+    'Internet Retail': 'Software (Internet)',
+    'Confectioners': 'Food Processing',
+    'Beverages - Non-Alcoholic': 'Beverage (Soft)',
+    'Credit Services': 'Financial Svcs. (Non-bank & Insurance)',
+    'Footwear & Accessories': 'Apparel',
+}
 
 
-# Create a DataFrame from the results
-columns = ['Stock', 'Industry', 'Price', 'PE Ratio', 'PB Ratio', 'Dividend Yield', 'Industry PE', 'Industry PB', 'Target Mean Price', 'Target Median Price', 'Financial Intrinsic Value']
-overview_df = pd.DataFrame(results, columns=columns)
-
-# Apply Recommendation Logic to DataFrame
-def label_recommendations(row):
-    if row['PE Ratio'] < float(row['Industry PE']) and row['PB Ratio'] < float(row['Industry PB']):
+def recommend(pe, pb, pe_avg, pb_avg):
+    """Buy/Sell require a margin vs the industry average (see config.yaml)."""
+    if not all(is_num(v) for v in (pe, pb, pe_avg, pb_avg)):
+        return 'Hold (benchmark unavailable)'
+    if pe < pe_avg * REC_CFG['buy_pe_multiplier'] and pb < pb_avg * REC_CFG['buy_pb_multiplier']:
         return 'Buy'
-    elif row['PE Ratio'] > float(row['Industry PE']) and row['PB Ratio'] > float(row['Industry PB']):
+    if pe > pe_avg * REC_CFG['sell_pe_multiplier'] and pb > pb_avg * REC_CFG['sell_pb_multiplier']:
         return 'Sell'
-    else:
-        return 'Hold'
+    return 'Hold'
 
-overview_df['Recommendation'] = overview_df.apply(label_recommendations, axis=1)
+
+@st.cache_data(ttl=15 * 60)  # config.yaml: update_interval_minutes
+def build_overview():
+    # Column 3 has historically been Trailing PE (matching the stocks'
+    # trailingPE), column 2 on the PBV page the industry price/book ratio.
+    pe_averages = get_industry_averages(PE_URL, ('trailing pe',), 3)
+    pb_averages = get_industry_averages(PB_URL, ('pbv', 'price/book'), 2)
+
+    results = []
+    for stock in stocks:
+        try:
+            stock_price, pe_ratio, pb_ratio, dividend_yield, mean_rec, median_rec, financial_iv, industry = get_stock_data(stock)
+        except Exception as e:
+            st.warning(f"Failed to fetch {stock}: {e}")
+            continue
+        industry = INDUSTRY_MAP.get(industry, industry)
+        pe_average = get_pe_average(industry, pe_averages)
+        pb_average = get_pb_average(industry, pb_averages)
+        results.append([stock, industry, stock_price, pe_ratio, pb_ratio, dividend_yield, pe_average, pb_average, mean_rec, median_rec, financial_iv])
+
+    columns = ['Stock', 'Industry', 'Price', 'PE Ratio', 'PB Ratio', 'Dividend Yield', 'Industry PE', 'Industry PB', 'Target Mean Price', 'Target Median Price', 'Financial Intrinsic Value']
+    overview_df = pd.DataFrame(results, columns=columns)
+    overview_df['Recommendation'] = overview_df.apply(
+        lambda row: recommend(row['PE Ratio'], row['PB Ratio'], row['Industry PE'], row['Industry PB']), axis=1
+    )
+    return overview_df
+
 
 # Add color coding
 def highlight_rows(row):
@@ -193,7 +302,7 @@ def highlight_rows(row):
     elif row['Recommendation'] == 'Sell':
         return ['background-color: rgba(255, 0, 0, 0.2)'] * len(row)  # Soft red
     else:
-        return [''] * len(row)  # No background color for "Hold"# No background color for "Hold"
+        return [''] * len(row)  # No background color for "Hold"
 
 
 # PART 4: Streamlit app logic
@@ -206,6 +315,8 @@ if "selected_stock" not in st.session_state:
 if st.session_state.selected_stock is None:
     # Main Dashboard
     st.title("Stock Overview Dashboard")
+
+    overview_df = build_overview()
 
     # Dropdown to select a stock
     selected_stock = st.selectbox("Select a stock for detailed analysis:", overview_df["Stock"].unique())
@@ -282,4 +393,3 @@ else:
     # Display historical data and technical indicators
     st.subheader("Historical Data")
     st.dataframe(data[['Datetime', 'Open', 'High', 'Low', 'Close', 'Volume']])
-

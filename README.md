@@ -48,10 +48,26 @@ The Streamlit app provides an interactive dashboard where users can:
   - Includes metrics like stock price, P/E ratio, P/B ratio, and industry classification.
 - **Industry Benchmarking**:
   - Scrapes data for industry averages of P/E and P/B ratios.
-- **Recommendation Logic**:
-  - **Buy**: P/E and P/B ratios are below industry averages.
-  - **Sell**: P/E and P/B ratios are above industry averages.
-  - **Hold**: Metrics are near industry averages.
+- **Recommendation Logic** (thresholds configurable in `config.yaml`):
+  - **Buy**: P/E and P/B ratios are both below 85% of the industry averages.
+  - **Sell**: P/E and P/B ratios are both above 115% of the industry averages.
+  - **Hold**: Metrics are near industry averages (or flagged as
+    `Hold (benchmark unavailable)` when no industry benchmark could be loaded).
+- **Intrinsic Value**:
+  - Estimated with the Benjamin Graham formula `EPS × (8.5 + 2g)`, where `g`
+    is the expected earnings growth in percent (clamped to 0–25%).
+
+### 4. **Kaggle Daily Job** (`pe-pb-ratiotrigger.ipynb`)
+A self-contained notebook scheduled to run daily on Kaggle. Each run sends to Telegram:
+- Per-stock Buy/Hold/Sell recommendations (batched into a few messages).
+- A McClellan Oscillator trend chart with Zweig-style breadth-thrust detection
+  (oversold below −70 within the last 10 sessions, now above +70).
+- A VIX analysis with thresholds at 28 (warning) and 30 (high fear).
+- A crash-protection status from 3-day-smoothed VIX and the VIX3M/VIX term
+  structure (STRESS when VIX > 25 and VIX3M/VIX < 0.9; CRASH when VIX > 40).
+
+If a data source is unavailable, the notebook sends an explicit
+"data unavailable" notice instead of guessing.
 
 ---
 
@@ -60,7 +76,9 @@ The Streamlit app provides an interactive dashboard where users can:
   - Install dependencies: `pip install -r requirements.txt`
   - Run the app: `streamlit run app.py`
 - **Telegram Bot**:
-  - Configure the bot token and chat ID in the script (`send_telegram_message` function).
+  - On Kaggle: store the credentials as Kaggle user secrets named
+    `TELEGRAM_TOKEN` and `chat_id` (Add-ons → Secrets in the notebook editor).
+  - Locally: see `.env.example` — never commit tokens or chat IDs to the repo.
 - **Yahoo Finance API**:
   - Ensure internet access for fetching real-time data.
 - **Web Scraping**:
